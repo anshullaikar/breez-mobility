@@ -13,12 +13,12 @@ export default defineConfig({
     port: 5173,
     host: '0.0.0.0',
     proxy: {
-      '/auth': 'http://app:3000',
-      '/rides': 'http://app:3000',
-      '/admin': 'http://app:3000',
-      '/drivers': 'http://app:3000',
-      '/events': 'http://app:3000',
-      '/health': 'http://app:3000',
+      '/auth': 'http://localhost:3000',
+      '/rides': 'http://localhost:3000',
+      '/admin': 'http://localhost:3000',
+      '/drivers': 'http://localhost:3000',
+      '/events': 'http://localhost:3000',
+      '/health': 'http://localhost:3000',
     },
   },
 })
