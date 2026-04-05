@@ -47,12 +47,27 @@ export default function AddressSearch({ placeholder, value, onSelect, icon = 'pi
   const debouncedQuery = useDebounce(query, 400)
 
   useEffect(() => {
-    if (!debouncedQuery || debouncedQuery.length < 3) { setResults([]); return }
+    console.log('[AddressSearch] debouncedQuery effect fired:', { debouncedQuery, icon })
+    if (!debouncedQuery || debouncedQuery.length < 3) {
+      console.log('[AddressSearch] query too short, clearing results')
+      setResults([])
+      return
+    }
+
     let cancelled = false
     setLoading(true)
     searchAddress(debouncedQuery).then(res => {
-      if (!cancelled) { setResults(res); setLoading(false); setOpen(true) }
-    }).catch(() => { if (!cancelled) setLoading(false) })
+      console.log('[AddressSearch] searchAddress resolved:', { count: res.length, results: res, cancelled, icon })
+      if (!cancelled) {
+        setResults(res)
+        setLoading(false)
+        setOpen(true)
+        console.log('[AddressSearch] setOpen(true) called — dropdown should render')
+      }
+    }).catch((err) => {
+      console.error('[AddressSearch] searchAddress error:', err)
+      if (!cancelled) setLoading(false)
+    })
     return () => { cancelled = true }
   }, [debouncedQuery])
 
@@ -63,8 +78,12 @@ export default function AddressSearch({ placeholder, value, onSelect, icon = 'pi
   }, [])
 
   useEffect(() => {
-    if (!isFocused.current && value && value !== query) setQuery(value)
-  }, [value])                              // ← add the isFocused guard
+    console.log('[AddressSearch] value prop effect:', { value, query, isFocused: isFocused.current, icon })
+    if (!isFocused.current && value && value !== query) {
+      console.log('[AddressSearch] syncing query from value prop:', value)
+      setQuery(value)
+    }
+  }, [value])
 
   const handleSelect = (result) => {
     setQuery(result.short)
@@ -123,7 +142,8 @@ export default function AddressSearch({ placeholder, value, onSelect, icon = 'pi
             }}
             className="flex h-9 w-full rounded-md border border-input bg-transparent pl-9 pr-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             onBlur={() => {
-              isFocused.current = false     // ← clear on blur
+              isFocused.current = false
+              setTimeout(() => setOpen(false), 150)
             }}
           />
         </div>
@@ -133,9 +153,9 @@ export default function AddressSearch({ placeholder, value, onSelect, icon = 'pi
           {locating ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : <Navigation className="h-3.5 w-3.5 text-muted-foreground" />}
         </button>
       </div>
-
+      {console.log('[AddressSearch] render state:', { open, resultsCount: results.length, query, icon })}
       {open && results.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border bg-card shadow-lg max-h-48 overflow-y-auto"     onMouseDown={(e) => e.preventDefault()}>
+        <div className="absolute z-[9999] z-50 mt-1 w-full rounded-md border bg-card shadow-lg max-h-48 overflow-y-auto"     onMouseDown={(e) => e.preventDefault()}>
           {results.map((r, i) => (
             <button key={i} onClick={() => handleSelect(r)}
               className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors border-b border-border/50 last:border-0">
