@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { MapPin, Search, Loader2 } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { MapPin, Search, Loader2, Navigation } from 'lucide-react'
 
-// Debounce hook
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {
@@ -11,17 +10,14 @@ function useDebounce(value, delay) {
   return debounced
 }
 
-// Nominatim geocoding - free, no API key
 async function searchAddress(query) {
   if (!query || query.length < 3) return []
-  const url = `https://nominatim.openstreetmap.org/search?` +
-    `q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=5&countrycodes=in`
-  const res = await fetch(url, {
-    headers: { 'Accept-Language': 'en', 'User-Agent': 'BreezMobility/1.0' }
-  })
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=5&countrycodes=in`,
+    { headers: { 'Accept-Language': 'en', 'User-Agent': 'BreezMobility/1.0' } }
+  )
   if (!res.ok) return []
-  const data = await res.json()
-  return data.map(item => ({
+  return (await res.json()).map(item => ({
     display: item.display_name,
     short: [item.address?.road, item.address?.suburb, item.address?.city].filter(Boolean).join(', ') || item.display_name.split(',').slice(0, 3).join(','),
     lat: parseFloat(item.lat),
@@ -29,16 +25,26 @@ async function searchAddress(query) {
   }))
 }
 
+async function reverseGeocode(lat, lng) {
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
+    { headers: { 'Accept-Language': 'en', 'User-Agent': 'BreezMobility/1.0' } }
+  )
+  if (!res.ok) return null
+  const data = await res.json()
+  const short = [data.address?.road, data.address?.suburb, data.address?.city].filter(Boolean).join(', ')
+  return { address: short || data.display_name.split(',').slice(0, 3).join(','), lat, lng, full: data.display_name }
+}
+
 export default function AddressSearch({ placeholder, value, onSelect, icon = 'pickup' }) {
   const [query, setQuery] = useState(value || '')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
+  const [locating, setLocating] = useState(false)
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef(null)
-
   const debouncedQuery = useDebounce(query, 400)
 
-  // Search on debounced query change
   useEffect(() => {
     if (!debouncedQuery || debouncedQuery.length < 3) { setResults([]); return }
     let cancelled = false
@@ -49,43 +55,70 @@ export default function AddressSearch({ placeholder, value, onSelect, icon = 'pi
     return () => { cancelled = true }
   }, [debouncedQuery])
 
-  // Close dropdown on outside click
   useEffect(() => {
-    const handler = (e) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false)
-    }
+    const handler = (e) => { if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  // Update query when value prop changes (e.g. map pin drag)
-  useEffect(() => {
-    if (value && value !== query) setQuery(value)
-  }, [value])
+  useEffect(() => { if (value && value !== query) setQuery(value) }, [value])
 
   const handleSelect = (result) => {
     setQuery(result.short)
     setOpen(false)
     setResults([])
-    onSelect({ address: result.short, lat: result.lat, lng: result.lng, full: result.display })
+    onSelect({ address: result.short, lat: result.lat, lng: result.lng })
   }
+
+  const handleUseCurrentLocation = async () => {
+    if (!navigator.geolocation) return
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const result = await reverseGeocode(pos.coords.latitude, pos.coords.longitude)
+        if (result) {
+          setQuery(result.address)
+          onSelect(result)
+        }
+        setLocating(false)
+      },
+      () => setLocating(false),
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
+
+  // Called from map when user taps/drags pin
+  const handleMapSelect = async (lat, lng) => {
+    const result = await reverseGeocode(lat, lng)
+    if (result) {
+      setQuery(result.address)
+      onSelect(result)
+    }
+  }
+
+  // Expose handleMapSelect via ref pattern
+  useEffect(() => {
+    if (wrapperRef.current) wrapperRef.current._handleMapSelect = handleMapSelect
+  })
 
   const iconColor = icon === 'pickup' ? 'text-emerald-400' : 'text-red-400'
 
   return (
     <div ref={wrapperRef} className="relative">
-      <div className="relative">
-        <MapPin className={`absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${iconColor}`} />
-        <input
-          type="text"
-          placeholder={placeholder}
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); if (!e.target.value) onSelect(null) }}
-          onFocus={() => results.length > 0 && setOpen(true)}
-          className="flex h-9 w-full rounded-md border border-input bg-transparent pl-9 pr-8 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        />
-        {loading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-        {!loading && query.length >= 3 && <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />}
+      <div className="relative flex gap-1">
+        <div className="relative flex-1">
+          <MapPin className={`absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${iconColor}`} />
+          <input type="text" placeholder={placeholder} value={query}
+            onChange={(e) => { setQuery(e.target.value); if (!e.target.value) onSelect(null) }}
+            onFocus={() => results.length > 0 && setOpen(true)}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent pl-9 pr-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+        </div>
+        <button onClick={handleUseCurrentLocation} disabled={locating}
+          className="h-9 w-9 rounded-md border border-input flex items-center justify-center hover:bg-accent transition-colors shrink-0"
+          title="Use current location">
+          {locating ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : <Navigation className="h-3.5 w-3.5 text-muted-foreground" />}
+        </button>
       </div>
 
       {open && results.length > 0 && (
@@ -102,3 +135,5 @@ export default function AddressSearch({ placeholder, value, onSelect, icon = 'pi
     </div>
   )
 }
+
+export { reverseGeocode }
