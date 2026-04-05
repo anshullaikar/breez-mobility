@@ -74,15 +74,20 @@ export default function AdminPage() {
   // SSE
   useSSE('fleet', {
     ride_booked: (d) => { addEvent('info', `Ride booked: ${d.pickupAddress}`); fetchQueue() },
-    ride_assigned: () => { fetchQueue(); fetchActiveRides() },
+    ride_assigned: () => { addEvent('success', 'Ride assigned'); fetchQueue(); fetchActiveRides() },
     ride_status_change: (d) => { addEvent('info', `${d.rideId.slice(0,8)}: ${d.from} → ${d.to}`); fetchActiveRides() },
     ride_reassigned: () => { addEvent('warning', 'Ride reassigned'); fetchActiveRides() },
-    ride_cancelled: () => { addEvent('danger', 'Ride cancelled'); fetchActiveRides(); fetchQueue() },
-    driver_online: () => { addEvent('success', 'Driver online'); fetchDrivers() },
-    driver_offline: () => { addEvent('warning', 'Driver offline'); fetchDrivers() },
+    ride_cancelled: (d) => { addEvent('danger', `Ride cancelled: ${d.reason || ''}`); fetchActiveRides(); fetchQueue() },
+    driver_online: () => { addEvent('success', 'Driver came online'); fetchDrivers() },
+    driver_offline: () => { addEvent('warning', 'Driver went offline'); fetchDrivers() },
     low_battery_alert: (d) => { addEvent('danger', `LOW BATTERY: ${d.soc}%`); fetchFleet() },
-    battery_log: () => fetchFleet(),
-    driver_location: () => {},
+    battery_log: (d) => {
+      const labels = { VEHICLE_PICKUP: 'Vehicle pickup', VEHICLE_DROP: 'Post-ride log', CHARGE_START: 'Charging started', CHARGE_END: 'Charging ended' }
+      addEvent(d.eventType === 'CHARGE_START' ? 'info' : d.eventType === 'CHARGE_END' ? 'success' : 'info',
+        `${labels[d.eventType] || d.eventType}: SOC ${d.soc}%`)
+      fetchFleet()
+    },
+    vehicle_location: () => { fetchFleet() },
   })
 
   const addEvent = (type, message) => setEvents(prev => [{ type, message, ts: new Date() }, ...prev].slice(0, 80))
