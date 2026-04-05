@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PASSENGER
+  DRIVER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum RideStatus {
+  BOOKED
+  ASSIGNED
+  EN_ROUTE
+  ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  ON_RIDE
+  CHARGING
+  OFFLINE
+}
+
+enum BatteryEventType {
+  VEHICLE_PICKUP
+  VEHICLE_DROP
+  CHARGE_START
+  CHARGE_END
+}
+
+model User {
+  id         String   @id @default(uuid())
+  phone      String   @unique
+  name       String
+  dob        DateTime?
+  role       Role     @default(PASSENGER)
+  pin        String?
+  employeeId String?  @unique @map("employee_id")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  ridesAsPassenger Ride[]       @relation("PassengerRides")
+  ridesAsDriver    Ride[]       @relation("DriverRides")
+  assignedVehicle  Vehicle?     @relation("CurrentDriver")
+  batteryLogs      BatteryLog[]
+
+  @@map("users")
+}
+
+model Vehicle {
+  id              String        @id @default(uuid())
+  plateNumber     String        @unique @map("plate_number")
+  model           String
+  year            Int
+  batteryCapacity Int           @map("battery_capacity")
+  status          VehicleStatus @default(AVAILABLE)
+  currentSoc      Int?          @map("current_soc")
+  parkingBay      String?       @map("parking_bay")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  currentDriverId String?      @unique @map("current_driver_id")
+  currentDriver   User?        @relation("CurrentDriver", fields: [currentDriverId], references: [id])
+  rides           Ride[]
+  batteryLogs     BatteryLog[]
+
+  @@map("vehicles")
+}
+
+model FareSlab {
+  id        String   @id @default(uuid())
+  name      String
+  minKm     Int      @map("min_km")
+  maxKm     Int      @map("max_km")
+  price     Int
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  rides Ride[]
+
+  @@map("fare_slabs")
+}
+
+model Ride {
+  id            String     @id @default(uuid())
+  pickupAddress String     @map("pickup_address")
+  pickupLat     Float?     @map("pickup_lat")
+  pickupLng     Float?     @map("pickup_lng")
+  dropAddress   String     @map("drop_address")
+  dropLat       Float?     @map("drop_lat")
+  dropLng       Float?     @map("drop_lng")
+  scheduledAt   DateTime   @map("scheduled_at")
+  status        RideStatus @default(BOOKED)
+  fare          Int
+  version       Int        @default(0)
+  cancelReason  String?    @map("cancel_reason")
+  startedAt     DateTime?  @map("started_at")
+  completedAt   DateTime?  @map("completed_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  passengerId String   @map("passenger_id")
+  passenger   User     @relation("PassengerRides", fields: [passengerId], references: [id])
+  driverId    String?  @map("driver_id")
+  driver      User?    @relation("DriverRides", fields: [driverId], references: [id])
+  vehicleId   String?  @map("vehicle_id")
+  vehicle     Vehicle? @relation(fields: [vehicleId], references: [id])
+  slabId      String   @map("slab_id")
+  slab        FareSlab @relation(fields: [slabId], references: [id])
+
+  events RideEvent[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([driverId, scheduledAt])
+  @@map("rides")
+}
+
+// Event sourcing - append-only log of every ride state change
+model RideEvent {
+  id        String   @id @default(uuid())
+  rideId    String   @map("ride_id")
+  ride      Ride     @relation(fields: [rideId], references: [id])
+  fromState String?  @map("from_state")
+  toState   String   @map("to_state")
+  actor     String   // userId who triggered
+  metadata  Json?    // any extra context
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([rideId, createdAt])
+  @@map("ride_events")
+}
+
+model BatteryLog {
+  id        String           @id @default(uuid())
+  eventType BatteryEventType @map("event_type")
+  soc       Int
+  range     Int?
+  notes     String?
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  driverId  String  @map("driver_id")
+  driver    User    @relation(fields: [driverId], references: [id])
+  vehicleId String  @map("vehicle_id")
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
+
+  @@index([vehicleId, createdAt])
+  @@map("battery_logs")
+}
