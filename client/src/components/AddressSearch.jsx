@@ -43,6 +43,7 @@ export default function AddressSearch({ placeholder, value, onSelect, icon = 'pi
   const [locating, setLocating] = useState(false)
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef(null)
+  const isFocused = useRef(false)          // ← add this
   const debouncedQuery = useDebounce(query, 400)
 
   useEffect(() => {
@@ -61,7 +62,9 @@ export default function AddressSearch({ placeholder, value, onSelect, icon = 'pi
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  useEffect(() => { if (value && value !== query) setQuery(value) }, [value])
+  useEffect(() => {
+    if (!isFocused.current && value && value !== query) setQuery(value)
+  }, [value])                              // ← add the isFocused guard
 
   const handleSelect = (result) => {
     setQuery(result.short)
@@ -108,13 +111,20 @@ export default function AddressSearch({ placeholder, value, onSelect, icon = 'pi
       <div className="relative flex gap-1">
         <div className="relative flex-1">
           <MapPin className={`absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${iconColor}`} />
-          <input type="text" placeholder={placeholder} value={query}
+          <input
+            type="text"
+            placeholder={placeholder}
+            value={query}
             onChange={(e) => { setQuery(e.target.value); if (!e.target.value) onSelect(null) }}
             onFocus={() => {
+              isFocused.current = true      // ← set on focus
               results.length > 0 && setOpen(true)
               onFocus?.()
             }}
             className="flex h-9 w-full rounded-md border border-input bg-transparent pl-9 pr-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            onBlur={() => {
+              isFocused.current = false     // ← clear on blur
+            }}
           />
         </div>
         <button onClick={handleUseCurrentLocation} disabled={locating}
@@ -125,7 +135,7 @@ export default function AddressSearch({ placeholder, value, onSelect, icon = 'pi
       </div>
 
       {open && results.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border bg-card shadow-lg max-h-48 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-full rounded-md border bg-card shadow-lg max-h-48 overflow-y-auto"     onMouseDown={(e) => e.preventDefault()}>
           {results.map((r, i) => (
             <button key={i} onClick={() => handleSelect(r)}
               className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors border-b border-border/50 last:border-0">

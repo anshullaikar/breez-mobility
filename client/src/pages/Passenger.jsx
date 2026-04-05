@@ -237,10 +237,10 @@ export default function PassengerPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <AddressSearch placeholder="Pickup location" icon="pickup"
+              <AddressSearch key="pickup" placeholder="Pickup location" icon="pickup"
                 value={pickup?.address || ''} onSelect={setPickup}
                 onFocus={() => setActiveField('pickup')} />
-              <AddressSearch placeholder="Drop-off location" icon="drop"
+              <AddressSearch key="dropoff" placeholder="Drop-off location" icon="drop"
                 value={drop?.address || ''} onSelect={setDrop}
                 onFocus={() => setActiveField('drop')} />
 
