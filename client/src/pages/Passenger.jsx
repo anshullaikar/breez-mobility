@@ -34,6 +34,7 @@ export default function PassengerPage() {
   const [trackingRide, setTrackingRide] = useState(null)
   const [driverLocation, setDriverLocation] = useState(null)
   const [notifications, setNotifications] = useState([])
+  const [activeField, setActiveField] = useState('pickup') // 'pickup' or 'drop'
   const prevDriverDistRef = useRef(null)
 
   // Booking form
@@ -135,10 +136,9 @@ export default function PassengerPage() {
   const handleMapClick = useCallback(async (lat, lng) => {
     const result = await reverseGeocode(lat, lng)
     if (!result) return
-    if (!pickup) setPickup(result)
-    else if (!drop) setDrop(result)
-    else setDrop(result) // re-set drop if both already set
-  }, [pickup, drop])
+    if (activeField === 'pickup') setPickup(result)
+    else setDrop(result)
+  }, [activeField])
 
   const activeRide = rides.find(r => !['COMPLETED', 'CANCELLED'].includes(r.status))
   useEffect(() => {
@@ -237,12 +237,17 @@ export default function PassengerPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <AddressSearch placeholder="Pickup location" icon="pickup" value={pickup?.address || ''} onSelect={setPickup} />
-              <AddressSearch placeholder="Drop-off location" icon="drop" value={drop?.address || ''} onSelect={setDrop} />
+              <AddressSearch placeholder="Pickup location" icon="pickup"
+                value={pickup?.address || ''} onSelect={setPickup}
+                onFocus={() => setActiveField('pickup')} />
+              <AddressSearch placeholder="Drop-off location" icon="drop"
+                value={drop?.address || ''} onSelect={setDrop}
+                onFocus={() => setActiveField('drop')} />
 
               {/* Map preview — tap to set locations */}
               <PassengerMap pickup={pickup} drop={drop} driverLocation={null} rideStatus={null}
-                mode="booking" onMapClick={handleMapClick} />
+              mode="booking" onMapClick={handleMapClick}
+              mapHint={`Tap map to set ${activeField}`} />
 
               {/* Distance and auto-selected slab */}
               {distKm !== null && (

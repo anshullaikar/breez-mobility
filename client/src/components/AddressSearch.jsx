@@ -36,7 +36,7 @@ async function reverseGeocode(lat, lng) {
   return { address: short || data.display_name.split(',').slice(0, 3).join(','), lat, lng, full: data.display_name }
 }
 
-export default function AddressSearch({ placeholder, value, onSelect, icon = 'pickup' }) {
+export default function AddressSearch({ placeholder, value, onSelect, icon = 'pickup', onFocus }) {
   const [query, setQuery] = useState(value || '')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
@@ -110,7 +110,10 @@ export default function AddressSearch({ placeholder, value, onSelect, icon = 'pi
           <MapPin className={`absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 ${iconColor}`} />
           <input type="text" placeholder={placeholder} value={query}
             onChange={(e) => { setQuery(e.target.value); if (!e.target.value) onSelect(null) }}
-            onFocus={() => results.length > 0 && setOpen(true)}
+            onFocus={() => {
+              results.length > 0 && setOpen(true)
+              onFocus?.()
+            }}
             className="flex h-9 w-full rounded-md border border-input bg-transparent pl-9 pr-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
         </div>
