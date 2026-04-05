@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet'
+import { useEffect, useRef, useCallback } from 'react'
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -42,25 +42,32 @@ function FitBounds({ points }) {
   const map = useMap()
   const prevKey = useRef('')
   useEffect(() => {
-    const key = points.map(p => `${p[0].toFixed(4)},${p[1].toFixed(4)}`).join('|')
+    const key = points.map(p => `${p[0].toFixed(3)},${p[1].toFixed(3)}`).join('|')
     if (key === prevKey.current) return
     prevKey.current = key
-    if (points.length >= 2) {
-      map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 15 })
-    } else if (points.length === 1) {
-      map.setView(points[0], 14)
-    }
-  }, [points.length])
+    if (points.length >= 2) map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 15 })
+    else if (points.length === 1) map.setView(points[0], 14)
+  }, [points.map(p => `${p[0].toFixed(3)},${p[1].toFixed(3)}`).join('|')])
   return null
 }
 
-export default function PassengerMap({ pickup, drop, driverLocation, rideStatus }) {
+// Allows clicking on map to set a location
+function MapClickHandler({ onMapClick, enabled }) {
+  useMapEvents({
+    click: (e) => {
+      if (enabled && onMapClick) onMapClick(e.latlng.lat, e.latlng.lng)
+    },
+  })
+  return null
+}
+
+export default function PassengerMap({ pickup, drop, driverLocation, rideStatus, mode = 'view', onMapClick }) {
   const points = []
   if (pickup) points.push([pickup.lat, pickup.lng])
   if (drop) points.push([drop.lat, drop.lng])
   if (driverLocation) points.push([driverLocation.lat, driverLocation.lng])
 
-  const center = pickup ? [pickup.lat, pickup.lng] : [28.6139, 77.2090]
+  const center = pickup ? [pickup.lat, pickup.lng] : drop ? [drop.lat, drop.lng] : [28.6139, 77.2090]
 
   const isDriverTracked = driverLocation && ['EN_ROUTE', 'ARRIVED', 'IN_PROGRESS'].includes(rideStatus)
   let etaInfo = null
@@ -70,6 +77,8 @@ export default function PassengerMap({ pickup, drop, driverLocation, rideStatus 
   } else if (isDriverTracked && drop && rideStatus === 'IN_PROGRESS') {
     const dist = haversineKm(driverLocation.lat, driverLocation.lng, drop.lat, drop.lng)
     etaInfo = { label: 'To destination', dist, eta: formatEta(dist) }
+  } else if (rideStatus === 'ARRIVED') {
+    etaInfo = { label: 'Driver waiting at pickup', dist: 0, eta: 'Arrived' }
   } else if (pickup && drop) {
     const dist = haversineKm(pickup.lat, pickup.lng, drop.lat, drop.lng)
     etaInfo = { label: 'Trip distance', dist, eta: formatEta(dist) }
@@ -84,15 +93,17 @@ export default function PassengerMap({ pickup, drop, driverLocation, rideStatus 
     routeLine.push([pickup.lat, pickup.lng], [drop.lat, drop.lng])
   }
 
-  if (points.length === 0) return null
+  const isBookingMode = mode === 'booking'
 
   return (
     <div className="space-y-2">
-      <div className="rounded-lg overflow-hidden border border-border" style={{ height: '240px' }}>
+      <div className="rounded-lg overflow-hidden border border-border relative" style={{ height: isBookingMode ? '200px' : '240px' }}>
         <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }}
           zoomControl={false} attributionControl={false}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <FitBounds points={points} />
+          {points.length > 0 && <FitBounds points={points} />}
+          <MapClickHandler onMapClick={onMapClick} enabled={isBookingMode} />
+
           {pickup && (
             <Marker position={[pickup.lat, pickup.lng]} icon={pickupIcon}>
               <Popup><span style={{ fontSize: '12px' }}>Pickup: {pickup.address}</span></Popup>
@@ -115,13 +126,22 @@ export default function PassengerMap({ pickup, drop, driverLocation, rideStatus 
             }} />
           )}
         </MapContainer>
+        {isBookingMode && (
+          <div className="absolute bottom-2 left-2 bg-card/90 backdrop-blur-sm text-[10px] text-muted-foreground px-2 py-1 rounded z-[1000]">
+            Tap map to set {!pickup ? 'pickup' : !drop ? 'drop-off' : 'location'}
+          </div>
+        )}
       </div>
       {etaInfo && (
         <div className="flex items-center justify-between text-xs bg-accent/50 rounded-lg px-3 py-2">
           <span className="text-muted-foreground">{etaInfo.label}</span>
-          <span className="font-medium">{etaInfo.dist.toFixed(1)} km · {etaInfo.eta}</span>
+          <span className="font-medium">
+            {etaInfo.dist > 0 ? `${etaInfo.dist.toFixed(1)} km · ` : ''}{etaInfo.eta}
+          </span>
         </div>
       )}
     </div>
   )
 }
+
+export { haversineKm }
