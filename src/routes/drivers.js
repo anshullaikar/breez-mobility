@@ -176,10 +176,12 @@ router.post('/online', auth, requireRole('DRIVER'), async (req, res) => {
 router.post('/offline', auth, requireRole('DRIVER'), async (req, res) => {
   const driverId = req.user.id;
   await redis.del(`driver:${driverId}:online`);
-  await redis.del(`driver:${driverId}:loc`);
   const vehicle = await prisma.vehicle.findFirst({ where: { currentDriverId: driverId } });
-  if (vehicle) await prisma.vehicle.update({ where: { id: vehicle.id }, data: { status: 'OFFLINE' } });
-  await publish('fleet', 'driver_offline', { driverId });
+  if (vehicle) {
+    await prisma.vehicle.update({ where: { id: vehicle.id }, data: { status: 'OFFLINE' } });
+    // Don't delete vehicle location — keep last known position
+  }
+  await publish('fleet', 'driver_offline', { driverId, vehicleId: vehicle?.id });
   res.json({ status: 'offline' });
 });
 
@@ -233,18 +235,31 @@ router.post('/end-charging', auth, requireRole('DRIVER'), async (req, res) => {
   res.status(201).json({ ...log, durationMinutes });
 });
 
-// POST /drivers/location - GPS ping
+// POST /drivers/location - GPS ping, stored against vehicle
 router.post('/location', auth, requireRole('DRIVER'), async (req, res) => {
   const { lat, lng } = req.body;
   if (!lat || !lng) return res.status(400).json({ error: 'lat and lng required' });
   const driverId = req.user.id;
 
-  await redis.hset(`driver:${driverId}:loc`, { lat, lng, ts: Date.now() });
-  await redis.expire(`driver:${driverId}:loc`, 60);
-  await redis.setex(`driver:${driverId}:online`, 60, '1');
-  await redis.geoadd('drivers:active', lng, lat, driverId);
-  await publish('fleet', 'driver_location', { driverId, lat, lng, ts: Date.now() });
+  // Find driver's assigned vehicle
+  const vehicle = await prisma.vehicle.findFirst({ where: { currentDriverId: driverId }, select: { id: true } });
 
+  // Store location against VEHICLE (not driver) - the location belongs to the vehicle
+  if (vehicle) {
+    await redis.hset(`vehicle:${vehicle.id}:loc`, { lat, lng, ts: Date.now(), driverId });
+    await redis.expire(`vehicle:${vehicle.id}:loc`, 120); // stale after 2 min
+    await redis.geoadd('vehicles:active', lng, lat, vehicle.id);
+  }
+
+  // Keep driver online status
+  await redis.setex(`driver:${driverId}:online`, 60, '1');
+
+  // Publish to fleet channel with both vehicle and driver IDs
+  await publish('fleet', 'vehicle_location', {
+    vehicleId: vehicle?.id, driverId, lat, lng, ts: Date.now(),
+  });
+
+  // If driver is on an active ride, publish to ride channel for passenger tracking
   const activeRide = await prisma.ride.findFirst({
     where: { driverId, status: { in: ['EN_ROUTE', 'ARRIVED', 'IN_PROGRESS'] } },
     select: { id: true },
