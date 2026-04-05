@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from './lib/auth'
 import LoginPage from './pages/Login'
 import PassengerPage from './pages/Passenger'
 import DriverPage from './pages/Driver'
-import AdminPage from './pages/Admin'
+import AdminPage from './pages/Manager'
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { auth } = useAuth()
@@ -23,7 +23,7 @@ function AppRoutes() {
     switch (auth.type) {
       case 'passenger': return '/passenger'
       case 'driver': return '/driver'
-      case 'admin': return '/admin'
+      case 'admin': return '/manager'
       default: return '/login'
     }
   }
@@ -41,7 +41,7 @@ function AppRoutes() {
           <DriverPage />
         </ProtectedRoute>
       } />
-      <Route path="/admin" element={
+      <Route path="/manager" element={
         <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
           <AdminPage />
         </ProtectedRoute>

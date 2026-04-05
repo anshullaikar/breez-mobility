@@ -22,7 +22,9 @@
     "clsx": "^2.1.1",
     "tailwind-merge": "^2.4.0",
     "lucide-react": "^0.424.0",
-    "date-fns": "^3.6.0"
+    "date-fns": "^3.6.0",
+    "leaflet": "^1.9.4",
+    "react-leaflet": "^4.2.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
