@@ -133,10 +133,11 @@ router.get('/queue', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res)
   }
 });
 
-// CRUD: drivers
+// ===== DRIVER CRUD =====
 router.post('/drivers', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
   try {
     const { name, phone, employeeId, pin } = req.body;
+    if (!name || !phone || !employeeId) return res.status(400).json({ error: 'name, phone, employeeId required' });
     const driver = await prisma.user.create({
       data: { name, phone, employeeId, pin: pin || '1234', role: 'DRIVER' },
     });
@@ -154,28 +155,142 @@ router.get('/drivers', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, re
     include: { assignedVehicle: { select: { id: true, plateNumber: true, model: true, currentSoc: true } } },
     orderBy: { name: 'asc' },
   });
-
-  // Enrich with online status from Redis
   const enriched = await Promise.all(drivers.map(async (d) => {
     const online = await redis.get(`driver:${d.id}:online`);
     return { ...d, online: online === '1' };
   }));
-
   res.json(enriched);
 });
 
-// CRUD: vehicles
+router.put('/drivers/:id', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
+  try {
+    const { name, phone, pin, active } = req.body;
+    const driver = await prisma.user.update({
+      where: { id: req.params.id },
+      data: {
+        ...(name && { name }),
+        ...(phone && { phone }),
+        ...(pin && { pin }),
+        ...(active !== undefined && { active }),
+      },
+    });
+    res.json(driver);
+  } catch (err) {
+    if (err.code === 'P2002') return res.status(409).json({ error: 'Duplicate phone' });
+    console.error('[Admin:updateDriver]', err);
+    res.status(500).json({ error: 'Failed to update driver' });
+  }
+});
+
+router.delete('/drivers/:id', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
+  try {
+    // Deactivate, don't hard delete
+    await prisma.user.update({ where: { id: req.params.id }, data: { active: false } });
+    // Unassign from vehicle
+    await prisma.vehicle.updateMany({ where: { currentDriverId: req.params.id }, data: { currentDriverId: null } });
+    await redis.del(`driver:${req.params.id}:online`);
+    await redis.del(`driver:${req.params.id}:loc`);
+    res.json({ message: 'Driver deactivated' });
+  } catch (err) {
+    console.error('[Admin:deleteDriver]', err);
+    res.status(500).json({ error: 'Failed to deactivate driver' });
+  }
+});
+
+// ===== VEHICLE CRUD =====
 router.post('/vehicles', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
   try {
     const { plateNumber, model, year, batteryCapacity, parkingBay } = req.body;
+    if (!plateNumber || !model) return res.status(400).json({ error: 'plateNumber and model required' });
     const vehicle = await prisma.vehicle.create({
-      data: { plateNumber, model, year, batteryCapacity, parkingBay, currentSoc: 100 },
+      data: { plateNumber, model, year: year || 2024, batteryCapacity: batteryCapacity || 40, parkingBay, currentSoc: 100 },
     });
     res.status(201).json(vehicle);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'Duplicate plate number' });
     console.error('[Admin:createVehicle]', err);
     res.status(500).json({ error: 'Failed to create vehicle' });
+  }
+});
+
+router.put('/vehicles/:id', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
+  try {
+    const { plateNumber, model, year, batteryCapacity, parkingBay, status } = req.body;
+    const vehicle = await prisma.vehicle.update({
+      where: { id: req.params.id },
+      data: {
+        ...(plateNumber && { plateNumber }),
+        ...(model && { model }),
+        ...(year && { year }),
+        ...(batteryCapacity && { batteryCapacity }),
+        ...(parkingBay !== undefined && { parkingBay }),
+        ...(status && { status }),
+      },
+    });
+    res.json(vehicle);
+  } catch (err) {
+    if (err.code === 'P2002') return res.status(409).json({ error: 'Duplicate plate number' });
+    console.error('[Admin:updateVehicle]', err);
+    res.status(500).json({ error: 'Failed to update vehicle' });
+  }
+});
+
+router.delete('/vehicles/:id', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
+  try {
+    // Unassign driver first
+    await prisma.vehicle.update({
+      where: { id: req.params.id },
+      data: { currentDriverId: null, status: 'OFFLINE' },
+    });
+    res.json({ message: 'Vehicle taken offline' });
+  } catch (err) {
+    console.error('[Admin:deleteVehicle]', err);
+    res.status(500).json({ error: 'Failed to remove vehicle' });
+  }
+});
+
+// POST /admin/vehicles/:id/assign-driver - assign a driver to a vehicle
+router.post('/vehicles/:id/assign-driver', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
+  try {
+    const { driverId } = req.body;
+    if (!driverId) return res.status(400).json({ error: 'driverId required' });
+
+    // Check driver exists and is active
+    const driver = await prisma.user.findUnique({ where: { id: driverId } });
+    if (!driver || driver.role !== 'DRIVER') return res.status(404).json({ error: 'Driver not found' });
+    if (!driver.active) return res.status(400).json({ error: 'Driver is deactivated' });
+
+    // Check driver isn't already assigned to another vehicle
+    const existingVehicle = await prisma.vehicle.findFirst({ where: { currentDriverId: driverId } });
+    if (existingVehicle) {
+      // Unassign from old vehicle first
+      await prisma.vehicle.update({ where: { id: existingVehicle.id }, data: { currentDriverId: null } });
+    }
+
+    const vehicle = await prisma.vehicle.update({
+      where: { id: req.params.id },
+      data: { currentDriverId: driverId },
+      include: { currentDriver: { select: { id: true, name: true, employeeId: true } } },
+    });
+
+    res.json(vehicle);
+  } catch (err) {
+    console.error('[Admin:assignDriver]', err);
+    res.status(500).json({ error: 'Failed to assign driver' });
+  }
+});
+
+// POST /admin/vehicles/:id/unassign-driver - remove driver from vehicle
+router.post('/vehicles/:id/unassign-driver', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
+  try {
+    const vehicle = await prisma.vehicle.update({
+      where: { id: req.params.id },
+      data: { currentDriverId: null },
+    });
+    res.json(vehicle);
+  } catch (err) {
+    console.error('[Admin:unassignDriver]', err);
+    res.status(500).json({ error: 'Failed to unassign driver' });
   }
 });
 
