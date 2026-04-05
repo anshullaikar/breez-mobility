@@ -64,6 +64,8 @@ services:
       app:
         condition: service_healthy
     restart: "no"
+    profiles:
+      - simulation
 
 volumes:
   pgdata:
