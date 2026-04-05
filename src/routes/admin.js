@@ -88,7 +88,7 @@ router.post('/assign', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, re
   }
 });
 
-// GET /admin/fleet - all vehicles with status and SOC
+// GET /admin/fleet - all vehicles with status, SOC, and live location
 router.get('/fleet', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
   try {
     const vehicles = await prisma.vehicle.findMany({
@@ -98,12 +98,12 @@ router.get('/fleet', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res)
       orderBy: { plateNumber: 'asc' },
     });
 
-    // Enrich with live location from Redis
+    // Enrich with live location from Redis (stored against vehicle ID)
     const enriched = await Promise.all(vehicles.map(async (v) => {
       let location = null;
-      if (v.currentDriverId) {
-        const loc = await redis.hgetall(`driver:${v.currentDriverId}:loc`);
-        if (loc && loc.lat) location = { lat: Number(loc.lat), lng: Number(loc.lng), ts: Number(loc.ts) };
+      const loc = await redis.hgetall(`vehicle:${v.id}:loc`);
+      if (loc && loc.lat) {
+        location = { lat: Number(loc.lat), lng: Number(loc.lng), ts: Number(loc.ts) };
       }
       return { ...v, location };
     }));
