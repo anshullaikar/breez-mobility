@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Breez - Live Fleet Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e1e1e6; }
+    #map { height: 100vh; width: calc(100% - 320px); float: left; }
+    #sidebar { width: 320px; height: 100vh; float: right; overflow-y: auto; padding: 16px; background: #1a1b23; border-left: 1px solid #2a2b35; }
+    h1 { font-size: 18px; font-weight: 600; margin-bottom: 12px; color: #fff; }
+    h2 { font-size: 13px; font-weight: 500; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 8px; }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+    .stat { background: #22232d; border-radius: 8px; padding: 12px; }
+    .stat-value { font-size: 28px; font-weight: 700; }
+    .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
+    .stat.green .stat-value { color: #4ade80; }
+    .stat.blue .stat-value { color: #60a5fa; }
+    .stat.amber .stat-value { color: #fbbf24; }
+    .stat.red .stat-value { color: #f87171; }
+    #log { font-family: monospace; font-size: 11px; line-height: 1.6; color: #888; max-height: 300px; overflow-y: auto; }
+    #log div { padding: 2px 0; border-bottom: 1px solid #1f2028; }
+    #log .event-status { color: #60a5fa; }
+    #log .event-location { color: #4ade80; }
+    #log .event-alert { color: #f87171; }
+    .connection-status { font-size: 11px; padding: 4px 8px; border-radius: 4px; display: inline-block; margin-bottom: 12px; }
+    .connection-status.connected { background: #064e3b; color: #4ade80; }
+    .connection-status.disconnected { background: #450a0a; color: #f87171; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="sidebar">
+    <h1>Breez fleet</h1>
+    <div id="conn-status" class="connection-status disconnected">Connecting...</div>
+
+    <div class="stat-grid">
+      <div class="stat green"><div class="stat-value" id="s-online">0</div><div class="stat-label">Drivers online</div></div>
+      <div class="stat blue"><div class="stat-value" id="s-active">0</div><div class="stat-label">Active rides</div></div>
+      <div class="stat amber"><div class="stat-value" id="s-completed">0</div><div class="stat-label">Completed</div></div>
+      <div class="stat red"><div class="stat-value" id="s-alerts">0</div><div class="stat-label">Low battery</div></div>
+    </div>
+
+    <h2>Event log</h2>
+    <div id="log"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Mumbai center
+    const map = L.map('map').setView([19.076, 72.8777], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OSM',
+      maxZoom: 18,
+    }).addTo(map);
+
+    const drivers = {};  // driverId -> marker
+    const stats = { online: 0, active: 0, completed: 0, alerts: 0 };
+    const onlineDrivers = new Set();
+
+    function updateStats() {
+      document.getElementById('s-online').textContent = onlineDrivers.size;
+      document.getElementById('s-active').textContent = stats.active;
+      document.getElementById('s-completed').textContent = stats.completed;
+      document.getElementById('s-alerts').textContent = stats.alerts;
+    }
+
+    function addLog(text, cls = '') {
+      const log = document.getElementById('log');
+      const div = document.createElement('div');
+      div.className = cls;
+      div.textContent = `${new Date().toLocaleTimeString()} ${text}`;
+      log.prepend(div);
+      while (log.children.length > 200) log.removeChild(log.lastChild);
+    }
+
+    function getDriverMarker(driverId) {
+      if (!drivers[driverId]) {
+        drivers[driverId] = L.circleMarker([0, 0], {
+          radius: 6, fillColor: '#4ade80', color: '#166534',
+          weight: 1.5, fillOpacity: 0.9,
+        }).addTo(map).bindPopup(`Driver: ${driverId.slice(0, 8)}...`);
+      }
+      return drivers[driverId];
+    }
+
+    // Admin token for SSE (quick and dirty for POC)
+    async function getToken() {
+      const res = await fetch('/auth/admin-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: '+919999000001', pin: '0000' }),
+      });
+      const data = await res.json();
+      return data.token;
+    }
+
+    async function connect() {
+      const token = await getToken();
+      const es = new EventSource(`/events/fleet?token=${token}`);
+
+      es.addEventListener('connected', () => {
+        document.getElementById('conn-status').className = 'connection-status connected';
+        document.getElementById('conn-status').textContent = 'Connected to fleet';
+        addLog('SSE connected to fleet channel', 'event-status');
+      });
+
+      es.addEventListener('driver_location', (e) => {
+        const d = JSON.parse(e.data);
+        const marker = getDriverMarker(d.driverId);
+        marker.setLatLng([d.lat, d.lng]);
+        onlineDrivers.add(d.driverId);
+        updateStats();
+      });
+
+      es.addEventListener('driver_online', (e) => {
+        const d = JSON.parse(e.data);
+        onlineDrivers.add(d.driverId);
+        addLog(`Driver ${d.driverId.slice(0, 8)} online`, 'event-status');
+        updateStats();
+      });
+
+      es.addEventListener('driver_offline', (e) => {
+        const d = JSON.parse(e.data);
+        onlineDrivers.delete(d.driverId);
+        if (drivers[d.driverId]) {
+          drivers[d.driverId].setStyle({ fillColor: '#666' });
+        }
+        updateStats();
+      });
+
+      es.addEventListener('ride_booked', (e) => {
+        const d = JSON.parse(e.data);
+        addLog(`Ride booked: ${d.pickupAddress} (₹${d.fare / 100})`, 'event-status');
+      });
+
+      es.addEventListener('ride_assigned', (e) => {
+        const d = JSON.parse(e.data);
+        stats.active++;
+        addLog(`Ride ${d.rideId.slice(0, 8)} assigned`, 'event-status');
+        updateStats();
+      });
+
+      es.addEventListener('ride_status_change', (e) => {
+        const d = JSON.parse(e.data);
+        if (d.to === 'EN_ROUTE' && drivers[d.driverId]) {
+          drivers[d.driverId]?.setStyle({ fillColor: '#60a5fa', color: '#1e40af' });
+        }
+        if (d.to === 'IN_PROGRESS' && drivers[d.driverId]) {
+          drivers[d.driverId]?.setStyle({ fillColor: '#fbbf24', color: '#92400e' });
+        }
+        if (d.to === 'COMPLETED') {
+          stats.completed++;
+          stats.active = Math.max(0, stats.active - 1);
+          if (drivers[d.driverId]) {
+            drivers[d.driverId]?.setStyle({ fillColor: '#4ade80', color: '#166534' });
+          }
+        }
+        addLog(`Ride ${d.rideId.slice(0, 8)}: ${d.from} → ${d.to}`, 'event-status');
+        updateStats();
+      });
+
+      es.addEventListener('low_battery_alert', (e) => {
+        const d = JSON.parse(e.data);
+        stats.alerts++;
+        addLog(`⚠ LOW BATTERY: Vehicle ${d.vehicleId.slice(0, 8)} at ${d.soc}%`, 'event-alert');
+        updateStats();
+      });
+
+      es.addEventListener('battery_log', (e) => {
+        const d = JSON.parse(e.data);
+        addLog(`Battery: ${d.eventType} SOC:${d.soc}%`, 'event-location');
+      });
+
+      es.onerror = () => {
+        document.getElementById('conn-status').className = 'connection-status disconnected';
+        document.getElementById('conn-status').textContent = 'Reconnecting...';
+      };
+    }
+
+    connect();
+  </script>
+</body>
+</html>
