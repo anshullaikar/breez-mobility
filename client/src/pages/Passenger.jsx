@@ -36,6 +36,27 @@ export default function PassengerPage() {
   const [notifications, setNotifications] = useState([])
   const [activeField, setActiveField] = useState('pickup') // 'pickup' or 'drop'
   const prevDriverDistRef = useRef(null)
+  const [selectedDateOffset, setSelectedDateOffset] = useState(0) // 0=today, 1=tomorrow
+  const [selectedHour, setSelectedHour] = useState(null)
+
+  // Compute min/max constraints
+  const minDt = new Date(Date.now() + 3 * 60 * 60 * 1000)
+  const maxDt = new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+  const getPickupDate = (offset) => {
+    const d = new Date()
+    d.setDate(d.getDate() + offset)
+    d.setHours(0, 0, 0, 0)
+    return d
+  }
+
+  // Build the ISO string whenever date+hour are both selected
+  useEffect(() => {
+    if (selectedHour === null) { setScheduledAt(''); return }
+    const d = getPickupDate(selectedDateOffset)
+    d.setHours(selectedHour, 0, 0, 0)
+    setScheduledAt(d.toISOString())
+  }, [selectedDateOffset, selectedHour])
 
   // Booking form
   const [pickup, setPickup] = useState(null)
@@ -259,12 +280,55 @@ export default function PassengerPage() {
 
               {/* Time picker */}
               <div>
-                <label className="text-xs text-muted-foreground">Schedule pickup (3–24 hours from now)</label>
-                <input type="datetime-local" value={scheduledAt}
-                  min={minDatetime} max={maxDatetime}
-                  onChange={e => setScheduledAt(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm mt-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                />
+                <label className="text-xs text-muted-foreground mb-2 block">
+                  Schedule pickup <span className="text-muted-foreground/60">(3–24 hrs from now)</span>
+                </label>
+
+                {/* Date chips */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {[0, 1].map(offset => {
+                    const d = getPickupDate(offset)
+                    const label = offset === 0 ? 'Today' : 'Tomorrow'
+                    const dateStr = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                    return (
+                      <button key={offset} onClick={() => { setSelectedDateOffset(offset); setSelectedHour(null) }}
+                        className={`p-2 rounded-lg border text-center text-xs transition-colors ${
+                          selectedDateOffset === offset
+                            ? 'border-primary bg-primary/10 ring-1 ring-primary/30'
+                            : 'border-border hover:bg-accent'
+                        }`}>
+                        <p className="text-muted-foreground mb-0.5">{label}</p>
+                        <p className="font-medium">{dateStr}</p>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Time slot grid */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {Array.from({ length: 24 }, (_, h) => {
+                    const candidate = new Date(getPickupDate(selectedDateOffset))
+                    candidate.setHours(h, 0, 0, 0)
+                    const tooEarly = candidate < minDt
+                    const tooLate = candidate > maxDt
+                    if (tooLate) return null
+                    const ampm = h >= 12 ? 'PM' : 'AM'
+                    const h12 = h % 12 === 0 ? 12 : h % 12
+                    return (
+                      <button key={h} disabled={tooEarly}
+                        onClick={() => setSelectedHour(h)}
+                        className={`py-2 rounded-lg border text-xs transition-colors ${
+                          selectedHour === h
+                            ? 'border-primary bg-primary text-primary-foreground font-medium'
+                            : tooEarly
+                            ? 'border-border text-muted-foreground/30 cursor-not-allowed'
+                            : 'border-border hover:bg-accent'
+                        }`}>
+                        {h12}:00 {ampm}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
 
               {/* Slab selector — auto-selected but user can override */}
