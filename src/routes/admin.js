@@ -6,6 +6,36 @@ const { publish } = require('../sse/manager');
 
 const router = Router();
 
+// GET /admin/completed-rides - completed rides with pagination
+router.get('/completed-rides', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const [rides, total] = await Promise.all([
+      prisma.ride.findMany({
+        where: { status: { in: ['COMPLETED', 'CANCELLED'] } },
+        include: {
+          passenger: { select: { id: true, name: true, phone: true } },
+          driver: { select: { id: true, name: true, employeeId: true } },
+          vehicle: { select: { id: true, plateNumber: true, model: true } },
+          slab: true,
+        },
+        orderBy: { completedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.ride.count({ where: { status: { in: ['COMPLETED', 'CANCELLED'] } } }),
+    ]);
+
+    res.json({ rides, total, page, totalPages: Math.ceil(total / limit) });
+  } catch (err) {
+    console.error('[Admin:completedRides]', err);
+    res.status(500).json({ error: 'Failed to get completed rides' });
+  }
+});
+
 // POST /admin/assign - assign driver to a ride
 router.post('/assign', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
   try {
