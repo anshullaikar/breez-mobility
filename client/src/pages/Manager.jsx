@@ -42,6 +42,11 @@ export default function AdminPage() {
   const [cancelReason, setCancelReason] = useState('')
   const [reassignDriverId, setReassignDriverId] = useState('')
 
+  // Manual assign modal
+  const [assignRide, setAssignRide] = useState(null)
+  const [assignRideDriverId, setAssignRideDriverId] = useState('')
+  const [assignRideVehicleId, setAssignRideVehicleId] = useState('')
+
   // Driver CRUD
   const [showDriverForm, setShowDriverForm] = useState(false)
   const [editingDriver, setEditingDriver] = useState(null)
@@ -117,14 +122,14 @@ export default function AdminPage() {
   }, []);
 
   // ===== DISPATCH ACTIONS =====
-  const handleAssign = async (rideId) => {
-    const d = drivers.find(d => d.online && d.active)
-    const v = fleet.find(v => v.status === 'AVAILABLE' && (v.currentSoc || 100) > 20)
-    if (!d) return setError('No online drivers available')
-    if (!v) return setError('No available vehicles with >20% SOC')
-    setLoading(rideId)
-    try { await api('POST', '/admin/assign', { rideId, driverId: d.id, vehicleId: v.id }, auth.token); fetchQueue(); fetchActiveRides() }
-    catch (e) { setError(e.message) }
+  const handleAssign = async () => {
+    if (!assignRide || !assignRideDriverId || !assignRideVehicleId) return
+    setLoading('assign')
+    try {
+      await api('POST', '/admin/assign', { rideId: assignRide.id, driverId: assignRideDriverId, vehicleId: assignRideVehicleId }, auth.token)
+      setAssignRide(null); setAssignRideDriverId(''); setAssignRideVehicleId('')
+      fetchQueue(); fetchActiveRides()
+    } catch (e) { setError(e.message) }
     setLoading('')
   }
 
@@ -291,8 +296,8 @@ export default function AdminPage() {
                       <p className="text-sm truncate">{ride.pickupAddress} → {ride.dropAddress}</p>
                       <p className="text-xs text-muted-foreground">{ride.passenger?.name} · {format(new Date(ride.scheduledAt), 'dd MMM HH:mm')} · ₹{(ride.fare / 100).toFixed(0)}</p>
                     </div>
-                    <Button size="sm" onClick={() => handleAssign(ride.id)} disabled={loading === ride.id}>
-                      {loading === ride.id ? '...' : 'Assign'}
+                    <Button size="sm" onClick={() => { setAssignRide(ride); setAssignRideDriverId(''); setAssignRideVehicleId('') }}>
+                      Assign
                     </Button>
                   </CardContent>
                 </Card>
@@ -579,6 +584,49 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {/* ===== ASSIGN RIDE MODAL (manual driver + vehicle selection) ===== */}
+      {assignRide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setAssignRide(null)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <Card className="relative w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <CardHeader><CardTitle className="text-base">Assign ride {assignRide.id.slice(0, 8)}</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">{assignRide.pickupAddress} → {assignRide.dropAddress}</p>
+              <p className="text-xs text-muted-foreground">{assignRide.passenger?.name} · {format(new Date(assignRide.scheduledAt), 'dd MMM HH:mm')} · ₹{(assignRide.fare / 100).toFixed(0)}</p>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Driver</label>
+                <select className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm mt-1"
+                  value={assignRideDriverId} onChange={e => setAssignRideDriverId(e.target.value)}>
+                  <option value="">Choose driver...</option>
+                  {drivers.filter(d => d.active).map(d => (
+                    <option key={d.id} value={d.id}>{d.name} ({d.employeeId}){d.online ? '' : ' — offline'}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Vehicle</label>
+                <select className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm mt-1"
+                  value={assignRideVehicleId} onChange={e => setAssignRideVehicleId(e.target.value)}>
+                  <option value="">Choose vehicle...</option>
+                  {fleet.map(v => (
+                    <option key={v.id} value={v.id}>{v.plateNumber} — {v.model} ({v.status}, SOC {v.currentSoc ?? 100}%)</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setAssignRide(null)}>Cancel</Button>
+                <Button className="flex-1" onClick={handleAssign} disabled={loading === 'assign' || !assignRideDriverId || !assignRideVehicleId}>
+                  {loading === 'assign' ? 'Assigning...' : 'Assign'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* ===== VEHICLE DETAIL DRAWER ===== */}
       {vehicleDetail && (
         <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setVehicleDetail(null)}>
@@ -672,8 +720,8 @@ export default function AdminPage() {
               <select className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm"
                 value={reassignDriverId} onChange={e => setReassignDriverId(e.target.value)}>
                 <option value="">Choose new driver...</option>
-                {drivers.filter(d => d.online && d.id !== reassignRide.driver?.id).map(d => (
-                  <option key={d.id} value={d.id}>{d.name} ({d.employeeId})</option>
+                {drivers.filter(d => d.active && d.id !== reassignRide.driver?.id).map(d => (
+                  <option key={d.id} value={d.id}>{d.name} ({d.employeeId}){d.online ? '' : ' — offline'}</option>
                 ))}
               </select>
               <div className="flex gap-2">
