@@ -19,6 +19,10 @@ const STATUS_BADGE = {
 }
 
 export default function AdminPage() {
+  const [completedRides, setCompletedRides] = useState([])
+  const [completedPage, setCompletedPage] = useState(1)
+  const [completedTotal, setCompletedTotal] = useState(0)
+  const [completedTotalPages, setCompletedTotalPages] = useState(1)
   const { auth, logout } = useAuth()
   const isSuperAdmin = auth.user.role === 'SUPER_ADMIN'
 
@@ -73,8 +77,16 @@ export default function AdminPage() {
   const fetchFleet = useCallback(async () => { try { setFleet(await api('GET', '/admin/fleet', null, auth.token)) } catch {} }, [auth.token])
   const fetchDrivers = useCallback(async () => { try { setDrivers(await api('GET', '/admin/drivers', null, auth.token)) } catch {} }, [auth.token])
   const fetchSlabs = useCallback(async () => { try { setSlabs(await api('GET', '/admin/slabs', null, auth.token)) } catch {} }, [auth.token])
-
-  useEffect(() => { fetchQueue(); fetchActiveRides(); fetchFleet(); fetchDrivers(); fetchSlabs() }, [])
+  const fetchCompletedRides = useCallback(async (page = 1) => {
+    try {
+      const data = await api('GET', `/admin/completed-rides?page=${page}&limit=20`, null, auth.token)
+      setCompletedRides(data.rides)
+      setCompletedTotal(data.total)
+      setCompletedPage(data.page)
+      setCompletedTotalPages(data.totalPages)
+    } catch {}
+  }, [auth.token])
+  useEffect(() => { fetchQueue(); fetchActiveRides(); fetchFleet(); fetchDrivers(); fetchSlabs(); fetchCompletedRides()}, [])
 
   // SSE
   useSSE('fleet', {
@@ -244,6 +256,7 @@ export default function AdminPage() {
     { id: 'active', label: 'Active rides', icon: Map, count: activeRides.length },
     { id: 'fleet', label: 'Fleet', icon: Truck, count: fleet.length },
     { id: 'drivers', label: 'Drivers', icon: Users, count: onlineDriverCount },
+    { id: 'completed', label: 'Completed', icon: CheckCircle2, count: completedTotal },
     ...(isSuperAdmin ? [{ id: 'slabs', label: 'Fare slabs', icon: IndianRupee, count: slabs.filter(s => s.active).length }] : []),
   ]
 
@@ -440,6 +453,69 @@ export default function AdminPage() {
             </div>
           )}
 
+          {/* ===== COMPLETED RIDES ===== */}
+          {tab === 'completed' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-medium text-muted-foreground">
+                  Completed & cancelled rides ({completedTotal})
+                </h2>
+                <Button size="sm" variant="outline" onClick={() => fetchCompletedRides(completedPage)}>
+                  <RefreshCw className="h-3 w-3 mr-1" /> Refresh
+                </Button>
+              </div>
+              {completedRides.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-8">No completed rides yet</p>
+              )}
+              {completedRides.map(ride => (
+                <Card key={ride.id} className={ride.status === 'CANCELLED' ? 'border-destructive/30' : ''}>
+                  <CardContent className="p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-muted-foreground">{ride.id.slice(0, 8)}</span>
+                        <Badge variant={ride.status === 'COMPLETED' ? 'success' : 'danger'}>{ride.status}</Badge>
+                        {ride.slab && <Badge variant="outline" className="text-[10px]">{ride.slab.name}</Badge>}
+                      </div>
+                      <span className="text-sm font-medium">₹{(ride.fare / 100).toFixed(0)}</span>
+                    </div>
+                    <p className="text-sm truncate">{ride.pickupAddress} → {ride.dropAddress}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {ride.passenger?.name}
+                      {ride.driver && ` · ${ride.driver.name} (${ride.driver.employeeId})`}
+                      {ride.vehicle && ` · ${ride.vehicle.plateNumber}`}
+                    </p>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>
+                        <Clock className="h-3 w-3 inline mr-1" />
+                        {ride.completedAt ? format(new Date(ride.completedAt), 'dd MMM yyyy HH:mm') : format(new Date(ride.updatedAt), 'dd MMM yyyy HH:mm')}
+                      </span>
+                      {ride.cancelReason && (
+                        <span className="text-destructive">Reason: {ride.cancelReason}</span>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+
+              {/* Pagination */}
+              {completedTotalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  <Button size="sm" variant="outline" disabled={completedPage <= 1}
+                    onClick={() => fetchCompletedRides(completedPage - 1)}>
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {completedPage} of {completedTotalPages}
+                  </span>
+                  <Button size="sm" variant="outline" disabled={completedPage >= completedTotalPages}
+                    onClick={() => fetchCompletedRides(completedPage + 1)}>
+                    Next
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+          
           {/* ===== DRIVERS ===== */}
           {tab === 'drivers' && (
             <div className="space-y-4">
