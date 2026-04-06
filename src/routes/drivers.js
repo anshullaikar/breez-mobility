@@ -54,7 +54,8 @@ router.get('/shift-state', auth, requireRole('DRIVER'), async (req, res) => {
       state = 'NEEDS_PICKUP_LOG';
       nextAction = 'VEHICLE_PICKUP';
       prompt = `Log battery for ${vehicle.plateNumber} to start your shift`;
-    } else if (logTypes.includes('CHARGE_START') && !logTypes.includes('CHARGE_END')) {
+    } 
+    else if (todaysLogs.length > 0 && todaysLogs[todaysLogs.length - 1].eventType === 'CHARGE_START') {
       state = 'CHARGING';
       nextAction = 'CHARGE_END';
       prompt = 'Enter SOC when charging is complete';

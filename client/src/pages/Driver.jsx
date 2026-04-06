@@ -30,6 +30,7 @@ export default function DriverPage() {
   const fetchShift = useCallback(async () => {
     try {
       const data = await api('GET', '/drivers/shift-state', null, auth.token)
+      console.log('[SHIFT STATE]', data.state, 'logs:', data.todaysLogs?.map(l => l.eventType))
       setShift(data)
     } catch (e) { setError(e.message) }
   }, [auth.token])
@@ -164,6 +165,10 @@ export default function DriverPage() {
 
   const showMap = shift.state !== 'NO_VEHICLE' && shift.state !== 'NEEDS_PICKUP_LOG'
 
+  // Fix: override state based on last log
+  const lastLog = shift.todaysLogs?.[shift.todaysLogs.length - 1]
+  const effectiveState = lastLog?.eventType === 'CHARGE_START' ? 'CHARGING' : shift.state
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 border-b bg-card/80 backdrop-blur-sm">
@@ -186,7 +191,7 @@ export default function DriverPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className={`h-2.5 w-2.5 rounded-full ${shift.online ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground/30'}`} />
-            <span className="text-sm font-medium">{shift.state.replace(/_/g, ' ')}</span>
+            <span className="text-sm font-medium">{effectiveState.replace(/_/g, ' ')}</span>
           </div>
           {shift.todayCompletedCount > 0 && (
             <span className="text-xs text-muted-foreground">{shift.todayCompletedCount} rides today</span>
@@ -221,7 +226,7 @@ export default function DriverPage() {
         )}
 
         {/* NO_VEHICLE */}
-        {shift.state === 'NO_VEHICLE' && (
+        {effectiveState === 'NO_VEHICLE' && (
           <Card className="border-destructive/30">
             <CardContent className="p-6 text-center space-y-2">
               <Navigation className="h-10 w-10 text-muted-foreground mx-auto opacity-30" />
@@ -232,7 +237,7 @@ export default function DriverPage() {
         )}
 
         {/* NEEDS_PICKUP_LOG */}
-        {shift.state === 'NEEDS_PICKUP_LOG' && (
+        {effectiveState === 'NEEDS_PICKUP_LOG' && (
           <Card className="border-amber-500/30">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
@@ -256,7 +261,7 @@ export default function DriverPage() {
         )}
 
         {/* NEEDS_POSTRIDE_LOG */}
-        {shift.state === 'NEEDS_POSTRIDE_LOG' && (
+        {effectiveState === 'NEEDS_POSTRIDE_LOG' && (
           <Card className="border-amber-500/30">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
@@ -274,7 +279,7 @@ export default function DriverPage() {
         )}
 
         {/* CHARGING */}
-        {shift.state === 'CHARGING' && (
+        {effectiveState === 'CHARGING' && (
           <Card className="border-blue-500/30">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
@@ -292,7 +297,7 @@ export default function DriverPage() {
         )}
 
         {/* ONLINE/OFFLINE controls */}
-        {(shift.state === 'ONLINE' || shift.state === 'OFFLINE') && (
+        {(effectiveState === 'ONLINE' || effectiveState === 'OFFLINE') && (
           <>
             <div className="flex gap-2">
               {shift.state === 'OFFLINE' ? (
@@ -304,7 +309,7 @@ export default function DriverPage() {
                   <Power className="h-4 w-4 mr-2" /> Go offline
                 </Button>
               )}
-              {shift.state !== 'CHARGING' && (
+              {effectiveState !== 'CHARGING' && (
                 <Button variant="secondary" className="flex-1" onClick={() => {
                   if (soc) startCharging(); else setError('Enter SOC before starting charge')
                 }} disabled={loading === 'charge'}>
@@ -313,7 +318,7 @@ export default function DriverPage() {
               )}
             </div>
 
-            {shift.state === 'ONLINE' && (
+            {effectiveState === 'ONLINE' && (
               <div className="flex gap-2">
                 <Input type="number" placeholder="SOC % (for charging)" value={soc}
                   onChange={e => setSoc(e.target.value)} min="0" max="100" className="flex-1" />
@@ -322,7 +327,7 @@ export default function DriverPage() {
               </div>
             )}
 
-            {shift.state === 'ONLINE' && shift.pendingAssignments === 0 && !shift.activeRide && (
+            {effectiveState === 'ONLINE' && shift.pendingAssignments === 0 && !shift.activeRide && (
               <div className="text-center py-6">
                 <div className="h-3 w-3 rounded-full bg-emerald-400 animate-pulse mx-auto mb-3" />
                 <p className="text-sm text-muted-foreground">Online — waiting for dispatch</p>
