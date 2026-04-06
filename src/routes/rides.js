@@ -164,6 +164,21 @@ router.patch('/:id/status', auth, idempotent(), async (req, res) => {
       },
     });
 
+    // Update vehicle status on ride transitions
+    if (ride.vehicleId) {
+      if (newStatus === 'EN_ROUTE') {
+        await prisma.vehicle.update({
+          where: { id: ride.vehicleId },
+          data: { status: 'ON_RIDE' },
+        });
+      } else if (newStatus === 'COMPLETED') {
+        await prisma.vehicle.update({
+          where: { id: ride.vehicleId },
+          data: { status: 'AVAILABLE' },
+        });
+      }
+    }
+
     // Publish to relevant channels
     const eventData = { rideId: ride.id, from: ride.status, to: newStatus, timestamp: new Date() };
     await Promise.all([
@@ -219,6 +234,13 @@ router.patch('/:id/cancel', auth, async (req, res) => {
         metadata: { reason },
       },
     });
+
+    if (ride.vehicleId) {
+      await prisma.vehicle.update({
+        where: { id: ride.vehicleId },
+        data: { status: 'AVAILABLE' },
+      });
+    }
 
     await publish(`ride:${ride.id}`, 'ride_cancelled', { rideId: ride.id, reason });
     await publish('fleet', 'ride_cancelled', { rideId: ride.id, reason });

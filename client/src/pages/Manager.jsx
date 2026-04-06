@@ -375,7 +375,13 @@ export default function AdminPage() {
                       <CardContent className="p-4 space-y-2">
                         <div className="flex items-center justify-between">
                           <p className="font-mono text-sm font-medium cursor-pointer hover:text-primary" onClick={() => openVehicleDetail(v.id)}>{v.plateNumber}</p>
-                          <Badge variant={v.status === 'AVAILABLE' ? 'success' : v.status === 'ON_RIDE' ? 'warning' : v.status === 'CHARGING' ? 'info' : 'secondary'}>
+                          <Badge variant={
+                            v.status === 'AVAILABLE' ? 'success' :
+                            v.status === 'ON_RIDE' ? 'warning' :
+                            v.status === 'CHARGING' ? 'info' :
+                            v.status === 'IDLE' ? 'secondary' :
+                            'secondary'
+                          }>
                             {v.status}
                           </Badge>
                         </div>
