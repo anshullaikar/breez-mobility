@@ -162,7 +162,11 @@ router.get('/drivers', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, re
   });
   const enriched = await Promise.all(drivers.map(async (d) => {
     const online = await redis.get(`driver:${d.id}:online`);
-    return { ...d, online: online === '1' };
+    // Fallback: if driver has an active ride, they're online regardless
+    const hasActiveRide = await prisma.ride.count({
+      where: { driverId: d.id, status: { in: ['ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'IN_PROGRESS'] } },
+    });
+    return { ...d, online: online === '1' || hasActiveRide > 0 };
   }));
   res.json(enriched);
 });
