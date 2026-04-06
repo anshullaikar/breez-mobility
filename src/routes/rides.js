@@ -6,6 +6,17 @@ const { idempotent } = require('../middleware/idempotent');
 const { canTransition, MIN_BOOKING_HOURS, CANCELLATION_WINDOW_HOURS } = require('../services/stateMachine');
 const { publish } = require('../sse/manager');
 
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 const router = Router();
 
 // POST /rides - book a ride (passenger)
@@ -130,6 +141,43 @@ router.patch('/:id/status', auth, idempotent(), async (req, res) => {
       });
     }
 
+    // Geofence checks
+    if (
+      (ride.status === 'ARRIVED' && newStatus === 'IN_PROGRESS') ||
+      (ride.status === 'IN_PROGRESS' && newStatus === 'COMPLETED')
+    ) {
+      const vehicle = await prisma.vehicle.findFirst({
+        where: { currentDriverId: req.user.id },
+        select: { id: true },
+      });
+
+      const loc = vehicle
+        ? await redis.hgetall(`vehicle:${vehicle.id}:loc`)
+        : null;
+
+      if (!loc || !loc.lat || !loc.lng) {
+        return res.status(400).json({
+          error: 'Location required — enable GPS tracking before progressing the ride',
+        });
+      }
+
+      const isStart = newStatus === 'IN_PROGRESS';
+      const targetLat = isStart ? ride.pickupLat : ride.dropLat;
+      const targetLng = isStart ? ride.pickupLng : ride.dropLng;
+      const maxDistance = isStart ? 50 : 300;
+      const label = isStart ? 'pickup' : 'drop-off';
+
+      const distance = haversineMeters(
+        Number(loc.lat), Number(loc.lng),
+        targetLat, targetLng
+      );
+
+      if (distance > maxDistance) {
+        return res.status(400).json({
+          error: `Must be within ${maxDistance}m of ${label} (currently ${Math.round(distance)}m away)`,
+        });
+      }
+    }
     // Optimistic concurrency: version check
     const expectedVersion = req.body.version ?? ride.version;
     const updateData = {
