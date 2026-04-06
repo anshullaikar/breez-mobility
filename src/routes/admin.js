@@ -105,7 +105,12 @@ router.get('/fleet', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res)
       if (loc && loc.lat) {
         location = { lat: Number(loc.lat), lng: Number(loc.lng), ts: Number(loc.ts) };
       }
-      return { ...v, location };
+      // Derive effective status
+      let effectiveStatus = v.status;
+      if (v.status === 'AVAILABLE' && !v.currentDriverId) {
+        effectiveStatus = 'IDLE';
+      }
+      return { ...v, status: effectiveStatus, location };
     }));
 
     res.json(enriched);
@@ -442,6 +447,13 @@ router.post('/cancel-ride', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (re
     await prisma.rideEvent.create({
       data: { rideId, fromState: ride.status, toState: 'CANCELLED', actor: req.user.id, metadata: { reason, cancelledByAdmin: true } },
     });
+
+    if (ride.vehicleId) {
+      await prisma.vehicle.update({
+        where: { id: ride.vehicleId },
+        data: { status: 'AVAILABLE' },
+      });
+    }
 
     await Promise.all([
       publish(`ride:${rideId}`, 'ride_cancelled', { rideId, reason }),
