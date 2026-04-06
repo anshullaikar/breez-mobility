@@ -493,4 +493,82 @@ router.get('/vehicles/:id/detail', auth, requireRole('ADMIN', 'SUPER_ADMIN'), as
   }
 });
 
+// GET /admin/events — recent events from last 24 hours
+router.get('/events', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const [rideEvents, batteryLogs] = await Promise.all([
+      prisma.rideEvent.findMany({
+        where: { createdAt: { gte: since } },
+        include: {
+          ride: { select: { id: true, pickupAddress: true, dropAddress: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      }),
+      prisma.batteryLog.findMany({
+        where: { createdAt: { gte: since } },
+        include: {
+          vehicle: { select: { plateNumber: true } },
+          driver: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+    ]);
+
+    // Normalize into a single event shape
+    const events = [];
+
+    for (const re of rideEvents) {
+      const rideShort = re.ride?.id?.slice(0, 8) || '';
+      let type = 'info';
+      let message = `${rideShort}: ${re.fromState} → ${re.toState}`;
+
+      if (re.toState === 'CANCELLED') {
+        type = 'danger';
+        message = `Ride cancelled: ${re.metadata?.reason || rideShort}`;
+      } else if (re.toState === 'ASSIGNED' && re.metadata?.reassigned) {
+        type = 'warning';
+        message = `Ride reassigned: ${rideShort}`;
+      } else if (re.toState === 'ASSIGNED') {
+        type = 'success';
+        message = `Ride assigned: ${rideShort}`;
+      } else if (re.toState === 'COMPLETED') {
+        type = 'success';
+        message = `Ride completed: ${rideShort}`;
+      }
+
+      events.push({ type, message, createdAt: re.createdAt });
+    }
+
+    const batteryLabels = {
+      VEHICLE_PICKUP: 'Vehicle pickup',
+      VEHICLE_DROP: 'Post-ride log',
+      CHARGE_START: 'Charging started',
+      CHARGE_END: 'Charging ended',
+    };
+
+    for (const bl of batteryLogs) {
+      const label = batteryLabels[bl.eventType] || bl.eventType;
+      const plate = bl.vehicle?.plateNumber || '';
+      const type = bl.eventType === 'CHARGE_END' ? 'success' : bl.soc < 20 ? 'danger' : 'info';
+      events.push({
+        type,
+        message: `${plate} ${label}: SOC ${bl.soc}%`,
+        createdAt: bl.createdAt,
+      });
+    }
+
+    // Sort combined list by time descending
+    events.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json(events);
+  } catch (err) {
+    console.error('[Admin:events]', err);
+    res.status(500).json({ error: 'Failed to get events' });
+  }
+});
+
 module.exports = router;

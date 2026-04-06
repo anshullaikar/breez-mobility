@@ -90,7 +90,31 @@ export default function AdminPage() {
     vehicle_location: () => { fetchFleet() },
   })
 
-  const addEvent = (type, message) => setEvents(prev => [{ type, message, ts: new Date() }, ...prev].slice(0, 80))
+  const fetchEvents = useCallback(async () => {
+    try {
+      const data = await api('GET', '/admin/events', null, auth.token);
+      setEvents(data.map(e => ({ type: e.type, message: e.message, ts: new Date(e.createdAt) })));
+    } catch {}
+  }, [auth.token]);
+
+  useEffect(() => {
+    fetchQueue(); fetchActiveRides(); fetchFleet(); fetchDrivers(); fetchSlabs(); fetchEvents();
+  }, []);
+
+  const addEvent = (type, message) =>
+  setEvents(prev => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    return [{ type, message, ts: new Date() }, ...prev]
+      .filter(e => e.ts.getTime() > cutoff);
+  });
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+      setEvents(prev => prev.filter(e => e.ts.getTime() > cutoff));
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   // ===== DISPATCH ACTIONS =====
   const handleAssign = async (rideId) => {
@@ -532,10 +556,10 @@ export default function AdminPage() {
           )}
         </div>
 
-        {/* Sidebar: live events */}
+        {/* Sidebar: recent events */}
         <div className="w-64 shrink-0 hidden lg:block">
           <Card className="sticky top-[120px]">
-            <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Zap className="h-3.5 w-3.5 text-primary" /> Live events</CardTitle></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Zap className="h-3.5 w-3.5 text-primary" /> Recent events</CardTitle></CardHeader>
             <CardContent className="p-3 max-h-[60vh] overflow-y-auto">
               {events.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Waiting...</p>}
               {events.map((ev, i) => (
