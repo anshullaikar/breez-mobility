@@ -180,7 +180,8 @@ router.post('/offline', auth, requireRole('DRIVER'), async (req, res) => {
   const vehicle = await prisma.vehicle.findFirst({ where: { currentDriverId: driverId } });
   if (vehicle) {
     await prisma.vehicle.update({ where: { id: vehicle.id }, data: { status: 'OFFLINE' } });
-    // Don't delete vehicle location — keep last known position
+    // Keep last known position for the fleet map, but drop it from nearby search
+    await redis.zrem('vehicles:active', vehicle.id);
   }
   await publish('fleet', 'driver_offline', { driverId, vehicleId: vehicle?.id });
   res.json({ status: 'offline' });
@@ -289,8 +290,9 @@ router.get('/assignments', auth, requireRole('DRIVER'), async (req, res) => {
 router.get('/nearby', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
   const { lat, lng, radius = 5 } = req.query;
   if (!lat || !lng) return res.status(400).json({ error: 'lat and lng required' });
-  const nearby = await redis.geosearch('drivers:active', 'FROMLONLAT', Number(lng), Number(lat), 'BYRADIUS', Number(radius), 'km', 'ASC', 'COUNT', 20, 'WITHDIST');
-  res.json(nearby);
+  // Locations are indexed per vehicle (see POST /drivers/location)
+  const nearby = await redis.geosearch('vehicles:active', 'FROMLONLAT', Number(lng), Number(lat), 'BYRADIUS', Number(radius), 'km', 'ASC', 'COUNT', 20, 'WITHDIST');
+  res.json(nearby.map(([vehicleId, distanceKm]) => ({ vehicleId, distanceKm: Number(distanceKm) })));
 });
 
 module.exports = router;
