@@ -9,7 +9,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+// CORS_ORIGIN: comma-separated list of allowed origins; unset allows all (dev)
+const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((o) => o.trim());
+app.use(cors(corsOrigins ? { origin: corsOrigins } : undefined));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 

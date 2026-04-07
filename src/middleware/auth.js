@@ -2,6 +2,11 @@ const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'breez-poc-secret';
 
+// Refuse to boot in production with the well-known dev secret
+if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || JWT_SECRET === 'breez-poc-secret')) {
+  throw new Error('JWT_SECRET must be set to a strong value in production');
+}
+
 function generateToken(user) {
   return jwt.sign(
     { id: user.id, role: user.role, phone: user.phone },
