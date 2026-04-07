@@ -246,15 +246,18 @@ router.post('/location', auth, requireRole('DRIVER'), async (req, res) => {
   // Find driver's assigned vehicle
   const vehicle = await prisma.vehicle.findFirst({ where: { currentDriverId: driverId }, select: { id: true } });
 
+  // Hot path: pipeline all writes into a single round trip to Redis
+  const pipeline = redis.pipeline();
   // Store location against VEHICLE (not driver) - the location belongs to the vehicle
   if (vehicle) {
-    await redis.hset(`vehicle:${vehicle.id}:loc`, { lat, lng, ts: Date.now(), driverId });
-    await redis.expire(`vehicle:${vehicle.id}:loc`, 120); // stale after 2 min
-    await redis.geoadd('vehicles:active', lng, lat, vehicle.id);
+    pipeline
+      .hset(`vehicle:${vehicle.id}:loc`, { lat, lng, ts: Date.now(), driverId })
+      .expire(`vehicle:${vehicle.id}:loc`, 120) // stale after 2 min
+      .geoadd('vehicles:active', lng, lat, vehicle.id);
   }
-
   // Keep driver online status
-  await redis.setex(`driver:${driverId}:online`, 60, '1');
+  pipeline.setex(`driver:${driverId}:online`, 60, '1');
+  await pipeline.exec();
 
   // Publish to fleet channel with both vehicle and driver IDs
   await publish('fleet', 'vehicle_location', {
