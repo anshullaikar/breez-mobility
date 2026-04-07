@@ -5,7 +5,7 @@ description: Working guide for the Breez Mobility codebase, a pre-scheduled EV r
 
 # Breez Mobility: codebase guide
 
-Read this before changing code. For design rationale see `docs/ARCHITECTURE.md`; for setup and the API reference see `README.md`.
+Read this before changing code. `docs/ARCHITECTURE.md` explains which ride-hailing industry patterns the design follows, and where it deliberately departs from them; `README.md` covers setup. Before adding infrastructure (locks, queues, outbox, tracing), check the roadmap in `docs/ARCHITECTURE.md` §11.
 
 ## Mental model
 
@@ -123,4 +123,4 @@ Demo credentials: drivers `BRZ0001`–`BRZ0030` / PIN `1234` (an admin must assi
 
 ## Known gaps
 
-Stubbed WhatsApp OTP, plaintext PINs, non-transactional ride write + event insert, client-chosen fare slab, JWT in the SSE query string, no CI. Details and fixes are in `docs/ARCHITECTURE.md` §11.
+Stubbed WhatsApp OTP, plaintext PINs, non-transactional ride write + event insert, client-chosen fare slab, JWT in the SSE query string, no CI. See also the roadmap in `docs/ARCHITECTURE.md` §11.
