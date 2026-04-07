@@ -80,7 +80,7 @@ Open http://localhost:3000/map.html to watch the simulation live.
 npm test
 
 # Integration tests (requires running services)
-API_URL=http://localhost:3000 node --test tests/lifecycle.test.js
+API_URL=http://localhost:3000 npm run test:integration
 ```
 
 ## Seed Data

@@ -39,5 +39,4 @@ initSSE();
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Breez] Server running on port ${PORT}`);
   console.log(`[Breez] Live map: http://localhost:${PORT}/map.html`);
-  console.log(`[Breez] Dashboard: http://localhost:${PORT}/dashboard.html`);
 });

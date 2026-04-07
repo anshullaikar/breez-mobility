@@ -180,19 +180,11 @@ router.patch('/:id/status', auth, idempotent(), async (req, res) => {
     }
     // Optimistic concurrency: version check
     const expectedVersion = req.body.version ?? ride.version;
-    const updateData = {
-      status: newStatus,
-      version: { increment: 1 },
-    };
-
-    if (newStatus === 'IN_PROGRESS') updateData.startedAt = new Date();
-    if (newStatus === 'COMPLETED') updateData.completedAt = new Date();
-
     const updated = await prisma.ride.updateMany({
       where: { id: ride.id, version: expectedVersion },
       data: {
         status: newStatus,
-        version: ride.version + 1,
+        version: expectedVersion + 1,
         ...(newStatus === 'IN_PROGRESS' && { startedAt: new Date() }),
         ...(newStatus === 'COMPLETED' && { completedAt: new Date() }),
       },
