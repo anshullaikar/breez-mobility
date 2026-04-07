@@ -1,4 +1,4 @@
-const { Router } = require('express');
+const { asyncRouter } = require('../middleware/asyncRouter');
 const prisma = require('../config/database');
 const { redis } = require('../config/redis');
 const { auth, requireRole } = require('../middleware/auth');
@@ -18,7 +18,7 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const router = Router();
+const router = asyncRouter();
 
 // POST /rides - book a ride (passenger)
 router.post('/', auth, requireRole('PASSENGER'), idempotent(), async (req, res) => {

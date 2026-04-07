@@ -1,10 +1,10 @@
-const { Router } = require('express');
+const { asyncRouter } = require('../middleware/asyncRouter');
 const prisma = require('../config/database');
 const { auth, requireRole } = require('../middleware/auth');
 const { subscribe } = require('../sse/manager');
 const { ADMIN_ROLES, isAdmin, canViewRide } = require('../services/access');
 
-const router = Router();
+const router = asyncRouter();
 
 // GET /events/ride/:id - passenger subscribes to ride updates
 router.get('/ride/:id', auth, async (req, res) => {

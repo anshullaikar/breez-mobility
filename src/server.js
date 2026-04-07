@@ -33,6 +33,13 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Fallback for errors forwarded by asyncRouter / thrown by middleware
+app.use((err, req, res, next) => {
+  console.error(`[Error] ${req.method} ${req.originalUrl}`, err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
 // Init SSE pub/sub listener
 initSSE();
 

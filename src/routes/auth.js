@@ -1,9 +1,9 @@
-const { Router } = require('express');
+const { asyncRouter } = require('../middleware/asyncRouter');
 const { redis } = require('../config/redis');
 const prisma = require('../config/database');
 const { generateToken } = require('../middleware/auth');
 
-const router = Router();
+const router = asyncRouter();
 
 // POST /auth/send-otp
 router.post('/send-otp', async (req, res) => {

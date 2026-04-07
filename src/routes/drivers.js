@@ -1,10 +1,10 @@
-const { Router } = require('express');
+const { asyncRouter } = require('../middleware/asyncRouter');
 const prisma = require('../config/database');
 const { redis } = require('../config/redis');
 const { auth, requireRole } = require('../middleware/auth');
 const { publish } = require('../sse/manager');
 
-const router = Router();
+const router = asyncRouter();
 
 // GET /drivers/shift-state - the brain of the driver app
 // Returns what state the driver is in so the UI knows exactly what to show

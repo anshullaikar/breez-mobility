@@ -1,10 +1,10 @@
-const { Router } = require('express');
+const { asyncRouter } = require('../middleware/asyncRouter');
 const prisma = require('../config/database');
 const { redis } = require('../config/redis');
 const { auth, requireRole } = require('../middleware/auth');
 const { publish } = require('../sse/manager');
 
-const router = Router();
+const router = asyncRouter();
 
 // GET /admin/completed-rides - completed rides with pagination
 router.get('/completed-rides', auth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
