@@ -9,7 +9,7 @@
     "db:generate": "npx prisma generate",
     "seed": "node prisma/seed.js",
     "simulate": "node simulation/run.js",
-    "test": "node --test tests/stateMachine.test.js",
+    "test": "node --test tests/stateMachine.test.js tests/access.test.js",
     "test:integration": "node --test tests/lifecycle.test.js"
   },
   "dependencies": {

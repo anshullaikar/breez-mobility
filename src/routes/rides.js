@@ -5,6 +5,7 @@ const { auth, requireRole } = require('../middleware/auth');
 const { idempotent } = require('../middleware/idempotent');
 const { canTransition, MIN_BOOKING_HOURS, CANCELLATION_WINDOW_HOURS } = require('../services/stateMachine');
 const { publish } = require('../sse/manager');
+const { isAdmin, canViewRide } = require('../services/access');
 
 function haversineMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -116,7 +117,7 @@ router.get('/:id', auth, async (req, res) => {
         events: { orderBy: { createdAt: 'asc' } },
       },
     });
-    if (!ride) return res.status(404).json({ error: 'Ride not found' });
+    if (!ride || !canViewRide(req.user, ride)) return res.status(404).json({ error: 'Ride not found' });
     res.json(ride);
   } catch (err) {
     console.error('[Rides:get]', err);
@@ -124,14 +125,18 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// PATCH /rides/:id/status - transition ride status (driver or admin)
-router.patch('/:id/status', auth, idempotent(), async (req, res) => {
+// PATCH /rides/:id/status - assigned driver progresses the ride
+// Admins use /admin/reassign and /admin/cancel-ride instead.
+router.patch('/:id/status', auth, requireRole('DRIVER'), idempotent(), async (req, res) => {
   try {
     const { status: newStatus } = req.body;
     if (!newStatus) return res.status(400).json({ error: 'Status required' });
 
     const ride = await prisma.ride.findUnique({ where: { id: req.params.id } });
     if (!ride) return res.status(404).json({ error: 'Ride not found' });
+    if (ride.driverId !== req.user.id) {
+      return res.status(403).json({ error: 'Ride is not assigned to you' });
+    }
 
     // State machine validation
     if (!canTransition(ride.status, newStatus)) {
@@ -247,6 +252,9 @@ router.patch('/:id/cancel', auth, async (req, res) => {
 
     const ride = await prisma.ride.findUnique({ where: { id: req.params.id } });
     if (!ride) return res.status(404).json({ error: 'Ride not found' });
+    if (!isAdmin(req.user) && ride.passengerId !== req.user.id) {
+      return res.status(403).json({ error: 'Only the passenger or an admin can cancel this ride' });
+    }
 
     if (!canTransition(ride.status, 'CANCELLED')) {
       return res.status(400).json({ error: `Cannot cancel a ride in ${ride.status} state` });
